@@ -1,0 +1,20 @@
+{
+  "name": "beckend_test",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "body-parser": "^2.2.0",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "express-session": "^1.18.1",
+    "mysql2": "^3.14.1"
+  },
+  "description": "> 部分插件可能需要单独下载，如果mysql插件出现报错可以换在db.js中将'mysql'换成'mysql2'进行尝试"
+}
