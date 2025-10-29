@@ -10,11 +10,15 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "bcrypt": "^6.0.0",
     "body-parser": "^2.2.0",
     "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "express-session": "^1.18.1",
-    "mysql2": "^3.14.1"
+    "express-validator": "^7.3.0",
+    "jsonwebtoken": "^9.0.2",
+    "mysql2": "^3.15.3"
   },
   "description": "> 部分插件可能需要单独下载，如果mysql插件出现报错可以换在db.js中将'mysql'换成'mysql2'进行尝试"
 }
