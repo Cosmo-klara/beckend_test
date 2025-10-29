@@ -1,6 +1,12 @@
 # Logs
 logs
 *.log
+
+#
 report/
+#
 node_modules/
+
+#
+.idea/
 .vscode/
