@@ -1,4 +1,3 @@
-// routes/majors.js（替换整个文件）
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
@@ -31,15 +30,15 @@ router.get('/', async (req, res) => {
             params.push(`%${safeQ}%`, `%${safeQ}%`);
         }
 
-        // 注意：LIMIT 与 OFFSET 我们已把经过 toSafeInt 校验后的整数直接拼接进 SQL（防止某些环境下的占位符问题）
+        // 某些 MySQL 驱动/服务器在预处理语句中对 LIMIT/ OFFSET 的占位符支持不稳定
+        // LIMIT 与 OFFSET ：把经过 toSafeInt 校验后的整数直接拼接进 SQL
+        // 防止某些环境下的占位符问题，有可能引起数据库报错，反正我这边是这样，所以得配合一个toSafeInt
         const sql = `SELECT MAJOR_ID, MAJOR_CODE, MAJOR_NAME, MAJOR_TYPE, BASE_INTRO
                 FROM major_info
                 ${where}
                 ORDER BY MAJOR_CODE
                 LIMIT ${pageSize} OFFSET ${offset}`;
 
-        // 若需调试可打开下面一行
-        // console.debug('[majors] sql=', sql, ' params=', params);
 
         const [rows] = await db.execute(sql, params);
         return res.json({ data: rows, meta: { page, pageSize, q: q || null } });

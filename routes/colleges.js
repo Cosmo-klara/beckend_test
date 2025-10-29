@@ -1,4 +1,3 @@
-// routes/colleges.js (修正版)
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
@@ -32,8 +31,6 @@ router.get('/', async (req, res) => {
 
         const where = whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : '';
 
-        // 注意：某些 MySQL 驱动/服务器在预处理语句中对 LIMIT/ OFFSET 的占位符支持不稳定，
-        // 所以这里我们在确保 pageSize/offset 为安全整数后直接拼接（防注入）
         const sql = `SELECT COLLEGE_ID, COLLEGE_CODE, COLLEGE_NAME, COLLEGE_LEVEL, PROVINCE, CITY_NAME, COLLEGE_TYPE, WEBSITE
                 FROM college_info ${where} ORDER BY COLLEGE_NAME LIMIT ${pageSize} OFFSET ${offset}`;
 
