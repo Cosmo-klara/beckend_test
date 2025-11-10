@@ -36,7 +36,6 @@ npm install express mysql2 bcrypt jsonwebtoken dotenv express-validator
 ngrok http --url=marlyn-unalleviative-annabel.ngrok-free.dev 3000
 ```
 
-
 ### 关于前端技术栈
 
 #### Web
