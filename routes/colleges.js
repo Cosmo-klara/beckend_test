@@ -12,28 +12,53 @@ function toSafeInt(val, defaultVal = 1, min = 1, max = 1000000) {
     return i;
 }
 
-// GET /api/colleges?page=&pageSize=&province=&is985=
+// GET /api/colleges?page=&pageSize=&province=&is985=&q=
 router.get('/', async (req, res) => {
     try {
-        const { province, is985, q } = req.query;
+        const { province, is985 } = req.query;
+        const rawQ = (req.query.q || '').toString();
+
         const page = toSafeInt(req.query.page, 1);
         const pageSize = toSafeInt(req.query.pageSize, 20, 1, 200);
         const offset = (page - 1) * pageSize;
+
+        const escapeLike = (s) => s.replace(/([%_\\])/g, '\\$1');
 
         const where = [];
         const params = [];
         if (province) { where.push('PROVINCE = ?'); params.push(province); }
         if (typeof is985 !== 'undefined') { where.push('IS_985 = ?'); params.push(Number(is985) ? 1 : 0); }
-        if (q) { where.push('(COLLEGE_NAME LIKE ?)'); params.push(`%${q}%`); }
-
+        if (rawQ.trim()) {
+            const q = escapeLike(rawQ.trim());
+            where.push('(COLLEGE_NAME LIKE ? ESCAPE \\\\)');
+            params.push(`%${q}%`);
+        }
         const whereSql = where.length ? ('WHERE ' + where.join(' AND ')) : '';
-        const sql = `SELECT COLLEGE_CODE, COLLEGE_NAME, IS_985, IS_211, IS_DFC, PROVINCE, CITY_NAME
-                FROM college_info ${whereSql}
-                ORDER BY COLLEGE_NAME
-                LIMIT ${pageSize} OFFSET ${offset}`;
 
-        const [rows] = await db.execute(sql, params);
-        return res.json({ data: rows, meta: { page, pageSize } });
+        const countSql = `SELECT COUNT(*) AS total FROM college_info ${whereSql}`;
+        const [countRows] = await db.execute(countSql, params);
+        const total = Number(countRows?.[0]?.total || 0);
+
+        // LIMIT/OFFSET 直接使用安全整型内插，避免占位符导致的 mysqld_stmt_execute 错误
+        const dataSql = `
+            SELECT COLLEGE_CODE, COLLEGE_NAME, IS_985, IS_211, IS_DFC, PROVINCE, CITY_NAME
+            FROM college_info
+            ${whereSql}
+            ORDER BY COLLEGE_CODE ASC
+            LIMIT ${pageSize} OFFSET ${offset}
+        `;
+        const [rows] = await db.execute(dataSql, params);
+
+        return res.json({
+            data: rows,
+            meta: {
+                page,
+                pageSize,
+                total,
+                totalPages: Math.max(1, Math.ceil(total / pageSize)),
+                hasNext: offset + rows.length < total
+            }
+        });
     } catch (err) {
         console.error('colleges.list error', err);
         return res.status(500).json({ error: 'Server error' });
