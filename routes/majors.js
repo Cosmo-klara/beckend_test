@@ -1,3 +1,4 @@
+// routes/majors.js
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
@@ -26,19 +27,16 @@ router.get('/', async (req, res) => {
         if (q) {
             // 为防止过长的查询词，截断（例如 100 字符）
             const safeQ = q.length > 100 ? q.slice(0, 100) : q;
-            where = 'WHERE MAJOR_NAME LIKE ? OR MAJOR_CODE LIKE ?';
-            params.push(`%${safeQ}%`, `%${safeQ}%`);
+            // 注意：这里用 MAJOR_NAME（你的表没有 MAJOR_CODE）
+            where = 'WHERE MAJOR_NAME LIKE ?';
+            params.push(`%${safeQ}%`);
         }
 
-        // 某些 MySQL 驱动/服务器在预处理语句中对 LIMIT/ OFFSET 的占位符支持不稳定
-        // LIMIT 与 OFFSET ：把经过 toSafeInt 校验后的整数直接拼接进 SQL
-        // 防止某些环境下的占位符问题，有可能引起数据库报错，反正我这边是这样，所以得配合一个toSafeInt
-        const sql = `SELECT MAJOR_ID, MAJOR_CODE, MAJOR_NAME, MAJOR_TYPE, BASE_INTRO
+        const sql = `SELECT MAJOR_ID, MAJOR_NAME, MAJOR_TYPE, BASE_INTRO
                 FROM major_info
                 ${where}
-                ORDER BY MAJOR_CODE
+                ORDER BY MAJOR_NAME
                 LIMIT ${pageSize} OFFSET ${offset}`;
-
 
         const [rows] = await db.execute(sql, params);
         return res.json({ data: rows, meta: { page, pageSize, q: q || null } });
@@ -50,8 +48,14 @@ router.get('/', async (req, res) => {
 
 router.get('/:majorId', async (req, res) => {
     try {
-        const majorId = req.params.majorId;
-        const [rows] = await db.execute('SELECT MAJOR_ID, MAJOR_CODE, MAJOR_NAME, MAJOR_TYPE, BASE_INTRO FROM major_info WHERE MAJOR_ID = ?', [majorId]);
+        // 强制把 majorId 转为整数
+        const majorId = parseInt(req.params.majorId, 10);
+        if (!Number.isFinite(majorId)) return res.status(400).json({ error: 'Invalid majorId' });
+
+        const [rows] = await db.execute(
+            'SELECT MAJOR_ID, MAJOR_NAME, MAJOR_TYPE, BASE_INTRO FROM major_info WHERE MAJOR_ID = ?',
+            [majorId]
+        );
         if (rows.length === 0) return res.status(404).json({ error: 'Major not found' });
         return res.json({ data: rows[0] });
     } catch (err) {
@@ -61,3 +65,4 @@ router.get('/:majorId', async (req, res) => {
 });
 
 module.exports = router;
+
