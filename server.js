@@ -10,6 +10,7 @@ const majorsRouter = require('./routes/majors');
 const plansRouter = require('./routes/plans');
 const schoolEnrollmentRouter = require('./routes/schoolEnrollment');
 const studentScoreRouter = require('./routes/studentScore');
+const devSamplesRouter = require('./routes/devsample');
 
 const app = express();
 
@@ -24,16 +25,17 @@ app.use('/majors', majorsRouter);
 app.use('/plans', plansRouter);
 app.use('/school-enrollment', schoolEnrollmentRouter);
 app.use('/student-score', studentScoreRouter);
+app.use('/dev-samples', devSamplesRouter);
 
 app.use((err, req, res, next) => {
     console.error('Unhandled error:', err);
     res.status(500).json({ error: 'Internal Server Error' });
 });
 
-app.use(express.static(path.join(__dirname, 'doc')));
+app.use('/public', express.static(path.join(__dirname, 'public')));
 
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'doc', 'api.html'));
+app.get('/dev', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'dev-samples-ui.html'));
 });
 
 const PORT = process.env.PORT || 3000;
