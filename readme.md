@@ -36,16 +36,11 @@ npm install express mysql2 bcrypt jsonwebtoken dotenv express-validator
 ngrok http --url=marlyn-unalleviative-annabel.ngrok-free.dev 3000
 ```
 
-### 关于前端技术栈
+#### 目前缺失的接口
 
-#### Web
+用户修改用户名，修改毕业高中的接口
 
-Vue3
+用户修改密码的接口，首先需要校验旧密码是否正确，然后再修改为新密码
 
-#### PC 端
 
-Electron
 
-#### 移动端
-
-Flutter/React Native

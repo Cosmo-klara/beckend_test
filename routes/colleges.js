@@ -2,6 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
+const { authRequired } = require('../middleware/auth');
 
 // 安全整数转换
 function toSafeInt(val, defaultVal = 1, min = 1, max = 1000000) {
@@ -82,6 +83,28 @@ router.get('/:collegeCode', async (req, res) => {
         return res.json({ data: rows[0] });
     } catch (err) {
         console.error('colleges.get error', err);
+        return res.status(500).json({ error: 'Server error', detail: err && err.message });
+    }
+});
+
+
+router.get('/:collegeCode/admissions', authRequired, async (req, res) => {
+    try {
+        const collegeCode = parseInt(req.params.collegeCode);
+        const { province, year } = req.query;
+        if (!Number.isFinite(collegeCode)) return res.status(400).json({ error: 'Invalid collegeCode' });
+
+        let where = 'WHERE COLLEGE_CODE = ?';
+        const params = [collegeCode];
+        if (province) { where += ' AND PROVINCE = ?'; params.push(province); }
+        if (year) { where += ' AND ADMISSION_YEAR = ?'; params.push(year); }
+
+        const sql = `SELECT ADMISSION_ID, MAJOR_NAME, TYPE, PROVINCE, ADMISSION_YEAR, MIN_SCORE, MIN_RANK
+                FROM college_admission_score ${where} ORDER BY ADMISSION_YEAR DESC`;
+        const [rows] = await db.execute(sql, params);
+        return res.json({ data: rows });
+    } catch (err) {
+        console.error('colleges.admissions error', err);
         return res.status(500).json({ error: 'Server error', detail: err && err.message });
     }
 });
