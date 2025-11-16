@@ -5,6 +5,7 @@ const bodyParser = require('body-parser');
 
 // 注册路由
 const authRouter = require('./routes/auth');
+const userRouter = require('./routes/users');
 const collegesRouter = require('./routes/colleges');
 const majorsRouter = require('./routes/majors');
 const plansRouter = require('./routes/plans');
@@ -20,6 +21,7 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
 app.use('/auth', authRouter);
+app.use('/users', userRouter);
 app.use('/colleges', collegesRouter);
 app.use('/majors', majorsRouter);
 app.use('/plans', plansRouter);
