@@ -140,8 +140,8 @@ router.get('/recommend', async (req, res) => {
             const yearsAgg = Array.from(byYear.entries()).map(([y, list]) => {
                 const ranks = list.map(x => Number(x.MIN_RANK)).filter(n => Number.isFinite(n));
                 const scores = list.map(x => Number(x.MIN_SCORE)).filter(n => Number.isFinite(n));
-                const minRank = ranks.length ? Math.min(...ranks) : NaN;
-                const minScore = scores.length ? Math.min(...scores) : null;
+                const minRank = ranks.length ? Math.max(...ranks) : NaN; // 低位次=更靠后，取该年的最大rank
+                const minScore = scores.length ? Math.min(...scores) : null; // 取该年的最低分
                 return { year: Number(y), minRank, minScore };
             }).filter(x => Number.isFinite(x.minRank));
             yearsAgg.sort((a, b) => b.year - a.year);
