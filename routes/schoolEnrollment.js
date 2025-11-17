@@ -32,15 +32,15 @@ router.get('/', authRequired, async (req, res) => {
             return res.json({ data: rows[0] });
         }
 
-        // 否则按学校名（COLLEGE_NAME）与可选的 graduationYear 查询，支持分页
-        if (!schoolName) {
-            return res.status(400).json({ error: 'Either schoolEnrollmentId or schoolName is required' });
-        }
+        // 查询逻辑：支持不传 schoolName，全量或按年份筛选；传入则按院校名称精确匹配
+        const params = [];
+        let where = 'WHERE 1=1';
 
-        // 限制长度并防止超长字符串
-        const safeSchoolName = String(schoolName).trim().slice(0, 200);
-        const params = [safeSchoolName];
-        let where = 'WHERE COLLEGE_NAME = ?';
+        if (schoolName) {
+            const safeSchoolName = String(schoolName).trim().slice(0, 200);
+            where += ' AND COLLEGE_NAME = ?';
+            params.push(safeSchoolName);
+        }
 
         if (graduationYear) {
             const y = toSafeInt(graduationYear);
@@ -49,7 +49,6 @@ router.get('/', authRequired, async (req, res) => {
             params.push(y);
         }
 
-        // 带分页
         const sql = `SELECT SCHOOL_ENROLLMENT_ID, COLLEGE_NAME, GRADUATION_YEAR, ADMISSION_COUNT, MIN_SCORE, MIN_RANK
                 FROM school_enrollment
                 ${where}
