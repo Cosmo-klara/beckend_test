@@ -132,10 +132,15 @@ router.get('/recommend', async (req, res) => {
             const lastYears = arr.slice(0, 3);
             const avgRank = lastYears.reduce((s, x) => s + Number(x.MIN_RANK), 0) / lastYears.length;
             const diff = userRank - avgRank;
-            const s = margin / 2.0971; // scale to fit ~0.95 at -margin and ~0.22 at +margin
-            const d0 = 0.847297860 * s; // shift so prob(0) ~= 0.70
-            let prob = 1 / (1 + Math.exp((diff - d0) / s));
-            prob = Number(prob.toFixed(4));
+            let prob;
+            if (diff < 0) {
+                const t = (-diff) / margin;
+                prob = 0.70 + t * (0.80 - 0.70);
+            } else {
+                const t = diff / margin;
+                prob = 0.70 - t * (0.70 - 0.35);
+            }
+            prob = Number(Math.max(0, Math.min(1, prob)).toFixed(4));
 
             const college = lastYears[0];
             const regionMatch = regions.length ? regions.includes(String(college.COLLEGE_PROVINCE)) : false;
@@ -157,17 +162,20 @@ router.get('/recommend', async (req, res) => {
                 admissions: lastYears.map(x => ({ year: x.ADMISSION_YEAR, minScore: x.MIN_SCORE, minRank: x.MIN_RANK, major: x.MAJOR_NAME }))
             });
         }
-        const rush = [], stable = [], safe = [];
+        const ref = [], rush = [], stable = [], safe = [];
         for (const r of results) {
             const p = Number(r.probability) || 0;
             if (p >= 0.75) { r.category = '保'; safe.push(r); }
-            else if (p >= 0.5) { r.category = '稳'; stable.push(r); }
+            else if (p >= 0.4) { r.category = '稳'; stable.push(r); }
             else if (p >= 0.2) { r.category = '冲'; rush.push(r); }
+            else { r.category = '参考'; ref.push(r); }
         }
+        ref.sort((a, b) => b.matchScore - a.matchScore);
         rush.sort((a, b) => b.matchScore - a.matchScore);
         stable.sort((a, b) => b.matchScore - a.matchScore);
         safe.sort((a, b) => b.matchScore - a.matchScore);
         const finalResults = [
+            ...ref.slice(0, 5),
             ...rush.slice(0, 5),
             ...stable.slice(0, 5),
             ...safe.slice(0, 5)
