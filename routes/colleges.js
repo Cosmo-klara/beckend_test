@@ -14,6 +14,17 @@ function toSafeInt(val, defaultVal = 1, min = 1, max = 1000000) {
     return i;
 }
 
+// 省份规范化（去除 “省/市/自治区/特别行政区” 后缀）
+function normalizeProvince(name) {
+    if (!name) return null;
+    let s = String(name).trim();
+    const suffixes = ['特别行政区','维吾尔自治区','壮族自治区','回族自治区','自治区','省','市'];
+    for (const suf of suffixes) {
+        if (s.endsWith(suf)) { s = s.slice(0, -suf.length); break; }
+    }
+    return s;
+}
+
 // 列表接口：支持 q(province/name模糊)，province, is985, is211, page, pageSize
 router.get('/', async (req, res) => {
     try {
@@ -73,6 +84,101 @@ router.get('/', async (req, res) => {
     }
 });
 
+router.get('/recommend', async (req, res) => {
+    try {
+        const objectiveWeight = Math.max(0, Math.min(1, Number(req.query.objectiveWeight ?? 0.8)));
+        let swRegion = Number(req.query.sw_region ?? 0.4);
+        let swLevel = Number(req.query.sw_level ?? 0.35);
+        let swMajor = Number(req.query.sw_major ?? 0.25);
+        const subjectSum = swRegion + swLevel + swMajor;
+        if (!Number.isFinite(subjectSum) || subjectSum <= 0) { swRegion = 0.4; swLevel = 0.35; swMajor = 0.25; }
+
+        const regions = typeof req.query.regions === 'string' ? req.query.regions.split(',').map(s => s.trim()).filter(Boolean) : [];
+        const prefer985 = req.query.is985 === '1' || req.query.is985 === 'true';
+        const prefer211 = req.query.is211 === '1' || req.query.is211 === 'true';
+        const preferDFC = req.query.isDFC === '1' || req.query.isDFC === 'true';
+        const majorPattern = typeof req.query.majorPattern === 'string' ? req.query.majorPattern.trim() : '';
+
+        const rRaw = Number(req.query.rank);
+        const userRank = Number.isFinite(rRaw) ? Math.floor(rRaw) : (req.user && Number.isFinite(Number(req.user.rank)) ? Math.floor(Number(req.user.rank)) : null);
+        const sourceProvinceRaw = (typeof req.query.province === 'string' && req.query.province.trim()) ? req.query.province.trim() : (req.user && req.user.province ? String(req.user.province) : null);
+        const sourceProvince = normalizeProvince(sourceProvinceRaw);
+        if (userRank == null || !sourceProvince) return res.status(400).json({ error: 'Missing rank or province' });
+
+        const margin = userRank < 300 ? 60 : userRank < 1000 ? 200 : userRank < 5000 ? 300 : userRank < 20000 ? 1200 : 2000;
+
+        const params = [sourceProvince, 2017, 2020];
+        let whereMajor = '';
+        if (majorPattern) { whereMajor = ' AND a.MAJOR_NAME LIKE ?'; params.push('%' + majorPattern + '%'); }
+        const sql = `SELECT a.COLLEGE_CODE, i.COLLEGE_NAME, i.PROVINCE AS COLLEGE_PROVINCE, i.IS_985, i.IS_211, i.IS_DFC,
+                            a.ADMISSION_YEAR, a.MIN_RANK, a.MIN_SCORE, a.MAJOR_NAME
+                     FROM college_admission_score a
+                     JOIN college_info i ON i.COLLEGE_CODE = a.COLLEGE_CODE
+                     WHERE a.PROVINCE = ? AND a.ADMISSION_YEAR BETWEEN ? AND ?${whereMajor}`;
+        const [rows] = await db.execute(sql, params);
+
+        const byCollege = new Map();
+        for (const r of rows) {
+            const code = r.COLLEGE_CODE;
+            let arr = byCollege.get(code);
+            if (!arr) { arr = []; byCollege.set(code, arr); }
+            if (Number.isFinite(Number(r.MIN_RANK))) arr.push(r);
+        }
+
+        const results = [];
+        for (const [code, arr] of byCollege.entries()) {
+            if (arr.length === 0) continue;
+            arr.sort((a, b) => b.ADMISSION_YEAR - a.ADMISSION_YEAR);
+            const lastYears = arr.slice(0, 3);
+            const avgRank = lastYears.reduce((s, x) => s + Number(x.MIN_RANK), 0) / lastYears.length;
+            const diff = userRank - avgRank;
+            const s = margin / 2.0971; // scale to fit ~0.95 at -margin and ~0.22 at +margin
+            const d0 = 0.847297860 * s; // shift so prob(0) ~= 0.70
+            let prob = 1 / (1 + Math.exp((diff - d0) / s));
+            prob = Number(prob.toFixed(4));
+
+            const college = lastYears[0];
+            const regionMatch = regions.length ? regions.includes(String(college.COLLEGE_PROVINCE)) : false;
+            const levelMatch = (prefer985 && college.IS_985 == 1) || (prefer211 && college.IS_211 == 1) || (preferDFC && college.IS_DFC == 1);
+            const majorMatch = !!majorPattern;
+            const subjRaw = (regionMatch ? swRegion : 0) + (levelMatch ? swLevel : 0) + (majorMatch ? swMajor : 0);
+            const subjScore = subjectSum > 0 ? (subjRaw / subjectSum) : 0;
+            const totalScore = objectiveWeight * prob + (1 - objectiveWeight) * subjScore;
+
+            results.push({
+                COLLEGE_CODE: code,
+                COLLEGE_NAME: college.COLLEGE_NAME,
+                PROVINCE: college.COLLEGE_PROVINCE,
+                IS_985: college.IS_985,
+                IS_211: college.IS_211,
+                IS_DFC: college.IS_DFC,
+                probability: prob,
+                matchScore: Number(totalScore.toFixed(4)),
+                admissions: lastYears.map(x => ({ year: x.ADMISSION_YEAR, minScore: x.MIN_SCORE, minRank: x.MIN_RANK, major: x.MAJOR_NAME }))
+            });
+        }
+        const rush = [], stable = [], safe = [];
+        for (const r of results) {
+            const p = Number(r.probability) || 0;
+            if (p >= 0.75) { r.category = '保'; safe.push(r); }
+            else if (p >= 0.5) { r.category = '稳'; stable.push(r); }
+            else if (p >= 0.2) { r.category = '冲'; rush.push(r); }
+        }
+        rush.sort((a, b) => b.matchScore - a.matchScore);
+        stable.sort((a, b) => b.matchScore - a.matchScore);
+        safe.sort((a, b) => b.matchScore - a.matchScore);
+        const finalResults = [
+            ...rush.slice(0, 5),
+            ...stable.slice(0, 5),
+            ...safe.slice(0, 5)
+        ];
+        return res.json({ data: finalResults });
+    } catch (err) {
+        console.error('colleges.recommend error', err);
+        return res.status(500).json({ error: 'Server error', detail: err && err.message });
+    }
+});
+
 router.get('/:collegeCode', async (req, res) => {
     try {
         const code = req.params.collegeCode;
@@ -108,5 +214,8 @@ router.get('/:collegeCode/admissions', authRequired, async (req, res) => {
         return res.status(500).json({ error: 'Server error', detail: err && err.message });
     }
 });
+
+// 推荐接口：
+
 
 module.exports = router;
