@@ -129,8 +129,26 @@ router.get('/recommend', async (req, res) => {
         for (const [code, arr] of byCollege.entries()) {
             if (arr.length === 0) continue;
             arr.sort((a, b) => b.ADMISSION_YEAR - a.ADMISSION_YEAR);
-            const lastYears = arr.slice(0, 3);
-            const avgRank = lastYears.reduce((s, x) => s + Number(x.MIN_RANK), 0) / lastYears.length;
+
+            const byYear = new Map();
+            for (const r of arr) {
+                const y = Number(r.ADMISSION_YEAR);
+                let list = byYear.get(y);
+                if (!list) { list = []; byYear.set(y, list); }
+                list.push(r);
+            }
+            const yearsAgg = Array.from(byYear.entries()).map(([y, list]) => {
+                const ranks = list.map(x => Number(x.MIN_RANK)).filter(n => Number.isFinite(n));
+                const scores = list.map(x => Number(x.MIN_SCORE)).filter(n => Number.isFinite(n));
+                const minRank = ranks.length ? Math.min(...ranks) : NaN;
+                const minScore = scores.length ? Math.min(...scores) : null;
+                return { year: Number(y), minRank, minScore };
+            }).filter(x => Number.isFinite(x.minRank));
+            yearsAgg.sort((a, b) => b.year - a.year);
+            const lastYears = yearsAgg.slice(0, 3);
+            if (lastYears.length === 0) continue;
+
+            const avgRank = lastYears.reduce((s, x) => s + x.minRank, 0) / lastYears.length;
             const diff = userRank - avgRank;
             let prob;
             if (diff < 0) {
@@ -142,7 +160,7 @@ router.get('/recommend', async (req, res) => {
             }
             prob = Number(Math.max(0, Math.min(1, prob)).toFixed(4));
 
-            const college = lastYears[0];
+            const college = arr[0];
             const regionMatch = regions.length ? regions.includes(String(college.COLLEGE_PROVINCE)) : false;
             const levelMatch = (prefer985 && college.IS_985 == 1) || (prefer211 && college.IS_211 == 1) || (preferDFC && college.IS_DFC == 1);
             const majorMatch = !!majorPattern;
@@ -159,7 +177,7 @@ router.get('/recommend', async (req, res) => {
                 IS_DFC: college.IS_DFC,
                 probability: prob,
                 matchScore: Number(totalScore.toFixed(4)),
-                admissions: lastYears.map(x => ({ year: x.ADMISSION_YEAR, minScore: x.MIN_SCORE, minRank: x.MIN_RANK, major: x.MAJOR_NAME }))
+                admissions: lastYears.map(x => ({ year: x.year, minScore: x.minScore, minRank: Math.round(x.minRank) }))
             });
         }
         const ref = [], rush = [], stable = [], safe = [];
