@@ -12,6 +12,7 @@ const plansRouter = require('./routes/plans');
 const schoolEnrollmentRouter = require('./routes/schoolEnrollment');
 const studentScoreRouter = require('./routes/studentScore');
 const devSamplesRouter = require('./routes/devsample');
+const segmentRouter = require('./routes/segment');
 
 const app = express();
 
@@ -28,6 +29,7 @@ app.use('/plans', plansRouter);
 app.use('/school-enrollment', schoolEnrollmentRouter);
 app.use('/student-score', studentScoreRouter);
 app.use('/dev-samples', devSamplesRouter);
+app.use('/segment', segmentRouter);
 
 app.use((err, req, res, next) => {
     console.error('Unhandled error:', err);
