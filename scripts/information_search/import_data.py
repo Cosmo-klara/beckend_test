@@ -174,10 +174,24 @@ def import_college_info(conn) -> Tuple[int, set]:
     return len(rows), valid_codes
 
 def import_admission_scores(conn, valid_codes: Optional[set] = None):
-    # 遍历 data 下除“院校数据”外的子目录，导入所有 *.csv
+    # 优先遍历 BASE_DIR/data 下除“院校数据”外的子目录，若不存在则遍历 BASE_DIR/output
     total = 0
-    for child in OUTPUT_DIR.iterdir():
+    root = None
+    data_dir = BASE_DIR / "data"
+    if data_dir.exists():
+        root = data_dir
+        print(f"[source] 使用数据目录：{root}")
+    elif OUTPUT_DIR.exists():
+        root = OUTPUT_DIR
+        print(f"[source] 使用输出目录：{root}")
+    else:
+        print(f"[source] 未找到数据源目录：{data_dir} 或 {OUTPUT_DIR}，不导入")
+        return
+
+    for child in root.iterdir():
         if not child.is_dir():
+            continue
+        if child.name == "院校数据":
             continue
         for csv in child.glob("*.csv"):
             try:
