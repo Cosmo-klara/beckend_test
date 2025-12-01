@@ -1,14 +1,12 @@
 const express = require('express')
 const { spawn } = require('child_process')
 const path = require('path')
+const fs = require('fs')
 
 const router = express.Router()
 
-// 建议把脚本复制到后端工程：scripts/information_search/import_data.py
-// 也可以先用你现有路径，后续再迁移
-const SCRIPT_PATH = path.join(__dirname, '..', 'scripts', 'information_search', 'import_data.py')
-// 如果暂时未复制，可改为绝对路径：
-// const SCRIPT_PATH = 'e:\\Extel\\work\\Class\\information_search\\import_data.py'
+const DEFAULT_SCRIPT_PATH = path.join(__dirname, '..', 'scripts', 'information_search', 'import_data.py')
+const SCRIPT_PATH = process.env.ADMIN_IMPORT_SCRIPT || DEFAULT_SCRIPT_PATH
 
 const state = {
     enabled: false,
@@ -23,22 +21,33 @@ const state = {
 
 function runImport(datasets = []) {
     if (state.running) return Promise.reject(new Error('job_running'))
+    if (!fs.existsSync(SCRIPT_PATH)) {
+        state.lastRun = new Date().toISOString()
+        state.lastExitCode = -1
+        state.lastError = 'script_not_found'
+        return Promise.reject(new Error('script_not_found'))
+    }
     state.running = true
     state.lastError = null
     state.lastLogs = []
-    return new Promise((resolve, reject) => {
-        const args = [SCRIPT_PATH]
-        // 如脚本支持参数，这里可加入：args.push('--datasets', datasets.join(','))
-        const p = spawn('python', args, { env: { ...process.env } })
-        p.stdout.on('data', (d) => state.lastLogs.push(d.toString()))
-        p.stderr.on('data', (d) => state.lastLogs.push(d.toString()))
-        p.on('error', (err) => {
+    const cmds = [
+        { cmd: 'python', args: [SCRIPT_PATH] },
+        { cmd: 'py', args: ['-3', SCRIPT_PATH] },
+        { cmd: 'python3', args: [SCRIPT_PATH] },
+    ]
+    const tryOne = (index, resolve, reject) => {
+        if (index >= cmds.length) {
             state.running = false
             state.lastRun = new Date().toISOString()
             state.lastExitCode = -1
-            state.lastError = String(err)
-            reject(err)
-        })
+            state.lastError = 'python_not_found'
+            return reject(new Error('python_not_found'))
+        }
+        const { cmd, args } = cmds[index]
+        const p = spawn(cmd, args, { env: { ...process.env } })
+        p.stdout.on('data', (d) => state.lastLogs.push(d.toString()))
+        p.stderr.on('data', (d) => state.lastLogs.push(d.toString()))
+        p.on('error', () => tryOne(index + 1, resolve, reject))
         p.on('close', (code) => {
             state.running = false
             state.lastRun = new Date().toISOString()
@@ -49,7 +58,8 @@ function runImport(datasets = []) {
                 reject(new Error(`exit_code_${code}`))
             }
         })
-    })
+    }
+    return new Promise((resolve, reject) => tryOne(0, resolve, reject))
 }
 
 // 简单调度：每 30 秒检查一次
@@ -92,7 +102,9 @@ router.post('/run', async (req, res) => {
         await runImport(datasets)
         res.json({ ok: true, lastRun: state.lastRun })
     } catch (e) {
-        res.status(500).json({ error: 'run_failed', detail: String(e), lastRun: state.lastRun })
+        const code = String(e && e.message || e)
+        const status = code === 'script_not_found' ? 404 : code === 'python_not_found' ? 500 : 500
+        res.status(status).json({ error: code, lastRun: state.lastRun, logsTail: state.lastLogs.slice(-10) })
     }
 })
 
