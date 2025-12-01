@@ -265,16 +265,8 @@ def main():
         charset="utf8mb4", autocommit=False
     )
     try:
-        valid_codes = None
-        try:
-            if COLLEGE_CSV.exists():
-                _, valid_codes = import_college_info(conn)
-            else:
-                print(f"未找到院校数据CSV：{COLLEGE_CSV}，跳过院校信息导入")
-        except Exception as e:
-            print(f"导入院校信息失败：{e}，继续导入招生数据")
-        import_admission_scores(conn, valid_codes)
-        print("全部导入完成")
+        import_admission_scores(conn, None)
+        print("全部导入完成（仅导入历年录取分数线）")
     finally:
         conn.close()
 
