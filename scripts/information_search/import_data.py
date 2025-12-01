@@ -27,6 +27,7 @@ DB_NAME = os.environ.get("DB_NAME", "manager")
 BASE_DIR = Path(__file__).resolve().parent
 COLLEGE_CSV = BASE_DIR / "data" / "院校数据" / "全国大学数据_合并.csv"
 OUTPUT_DIR = BASE_DIR / "output"
+ADMISSION_SOURCE_DIR = os.environ.get("ADMISSION_SOURCE_DIR")
 
 COLLEGE_REQUIRED = ["全国统一招生代码", "大学", "985", "211", "双一流", "省份", "城市"]
 ADMISSION_REQUIRED = [
@@ -174,18 +175,26 @@ def import_college_info(conn) -> Tuple[int, set]:
     return len(rows), valid_codes
 
 def import_admission_scores(conn, valid_codes: Optional[set] = None):
-    # 优先遍历 BASE_DIR/data 下除“院校数据”外的子目录，若不存在则遍历 BASE_DIR/output
+    # 优先使用环境变量 ADMISSION_SOURCE_DIR，其次尝试 scripts/information_search/data 与 scripts/data，最后回退到 output
     total = 0
     root = None
-    data_dir = BASE_DIR / "data"
-    if data_dir.exists():
-        root = data_dir
-        print(f"[source] 使用数据目录：{root}")
-    elif OUTPUT_DIR.exists():
+    if ADMISSION_SOURCE_DIR:
+        p = Path(ADMISSION_SOURCE_DIR)
+        if p.exists():
+            root = p
+            print(f"[source] 使用环境指定目录：{root}")
+    if root is None:
+        candidates = [BASE_DIR / "data", BASE_DIR.parent / "data"]
+        for c in candidates:
+            if c.exists():
+                root = c
+                print(f"[source] 使用数据目录：{root}")
+                break
+    if root is None and OUTPUT_DIR.exists():
         root = OUTPUT_DIR
         print(f"[source] 使用输出目录：{root}")
-    else:
-        print(f"[source] 未找到数据源目录：{data_dir} 或 {OUTPUT_DIR}，不导入")
+    if root is None:
+        print(f"[source] 未找到数据源目录，候选：{BASE_DIR/'data'}, {BASE_DIR.parent/'data'} 或 {OUTPUT_DIR}，不导入")
         return
 
     for child in root.iterdir():
