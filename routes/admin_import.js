@@ -7,6 +7,8 @@ const router = express.Router()
 
 const DEFAULT_SCRIPT_PATH = path.join(__dirname, '..', 'scripts', 'information_search', 'import_data.py')
 const SCRIPT_PATH = process.env.ADMIN_IMPORT_SCRIPT || DEFAULT_SCRIPT_PATH
+const DEFAULT_CRAWLER_SCRIPT = path.join(__dirname, '..', 'scripts', 'information_search', 'crawl_data.py')
+const CRAWLER_SCRIPT = process.env.CRAWLER_SCRIPT || DEFAULT_CRAWLER_SCRIPT
 
 const state = {
     enabled: false,
@@ -99,15 +101,73 @@ router.get('/status', (req, res) => {
     })
 })
 
+function runCrawler() {
+    if (state.running) return Promise.reject(new Error('job_running'))
+    if (!fs.existsSync(CRAWLER_SCRIPT)) {
+        state.lastRun = new Date().toISOString()
+        state.lastExitCode = -1
+        state.lastError = 'crawler_not_found'
+        return Promise.reject(new Error('crawler_not_found'))
+    }
+    state.running = true
+    state.lastError = null
+    state.lastLogs = []
+    const scriptDir = path.dirname(CRAWLER_SCRIPT)
+    const cmds = [
+        { cmd: 'python', args: [CRAWLER_SCRIPT] },
+        { cmd: 'py', args: ['-3', CRAWLER_SCRIPT] },
+        { cmd: 'python3', args: [CRAWLER_SCRIPT] },
+    ]
+    const tryOne = (index, resolve, reject) => {
+        if (index >= cmds.length) {
+            state.running = false
+            state.lastRun = new Date().toISOString()
+            state.lastExitCode = -1
+            state.lastError = 'python_not_found'
+            return reject(new Error('python_not_found'))
+        }
+        const { cmd, args } = cmds[index]
+        const p = spawn(cmd, args, { env: { ...process.env }, cwd: scriptDir, windowsHide: true })
+        p.stdout.on('data', (d) => state.lastLogs.push(d.toString()))
+        p.stderr.on('data', (d) => state.lastLogs.push(d.toString()))
+        p.on('error', () => tryOne(index + 1, resolve, reject))
+        p.on('close', (code) => {
+            state.running = false
+            state.lastRun = new Date().toISOString()
+            state.lastExitCode = code
+            if (code === 0) resolve(code)
+            else {
+                state.lastError = `exit_code_${code}`
+                reject(new Error(`exit_code_${code}`))
+            }
+        })
+    }
+    return new Promise((resolve, reject) => tryOne(0, resolve, reject))
+}
+
+router.post('/crawl', async (req, res) => {
+    if (!requireAuth(req)) return res.status(401).json({ error: 'unauthorized' })
+    try {
+        await runCrawler()
+        res.json({ ok: true, lastRun: state.lastRun })
+    } catch (e) {
+        const code = String(e && e.message || e)
+        const status = code === 'crawler_not_found' ? 404 : code === 'python_not_found' ? 500 : 500
+        res.status(status).json({ error: code, lastRun: state.lastRun, logsTail: state.lastLogs.slice(-10) })
+    }
+})
+
 router.post('/run', async (req, res) => {
     if (!requireAuth(req)) return res.status(401).json({ error: 'unauthorized' })
     const datasets = Array.isArray(req.body?.datasets) ? req.body.datasets : []
+    const crawlFirst = !!req.body?.crawlFirst
     try {
+        if (crawlFirst) await runCrawler()
         await runImport(datasets)
         res.json({ ok: true, lastRun: state.lastRun })
     } catch (e) {
         const code = String(e && e.message || e)
-        const status = code === 'script_not_found' ? 404 : code === 'python_not_found' ? 500 : 500
+        const status = ['script_not_found','python_not_found','crawler_not_found'].includes(code) ? (code === 'script_not_found' || code === 'crawler_not_found' ? 404 : 500) : 500
         res.status(status).json({ error: code, lastRun: state.lastRun, logsTail: state.lastLogs.slice(-10) })
     }
 })
