@@ -27,6 +27,10 @@ function runImport(datasets = []) {
         state.lastError = 'script_not_found'
         return Promise.reject(new Error('script_not_found'))
     }
+    const scriptDir = path.dirname(SCRIPT_PATH)
+    const outputDir = path.join(scriptDir, 'output')
+    try { fs.mkdirSync(outputDir, { recursive: true }) } catch (_) {}
+
     state.running = true
     state.lastError = null
     state.lastLogs = []
@@ -44,7 +48,7 @@ function runImport(datasets = []) {
             return reject(new Error('python_not_found'))
         }
         const { cmd, args } = cmds[index]
-        const p = spawn(cmd, args, { env: { ...process.env } })
+        const p = spawn(cmd, args, { env: { ...process.env }, cwd: scriptDir, windowsHide: true })
         p.stdout.on('data', (d) => state.lastLogs.push(d.toString()))
         p.stderr.on('data', (d) => state.lastLogs.push(d.toString()))
         p.on('error', () => tryOne(index + 1, resolve, reject))
